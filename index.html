@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>円の面積のひみつ ＋ 連続2倍計算機</title>
+<style>
+:root{--page:#eef2f7;--bg:#fff;--fg:#1b2633;--mut:#617285;--card:#fff;--line:#d9e1ea;--acc:#1f7ae0;--accfg:#fff;--a:#b2caeb;--b:#ebd3b2;--ink:#d6246e;--shadow:0 2px 10px rgba(20,40,70,.08);--warn:#fff4d6;--warnfg:#7a5200;--bad:#fde4e4;--badfg:#9b1c1c;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--page:#0b1016;--bg:#121a23;--fg:#e8eef4;--mut:#9fb0c0;--card:#18212b;--line:#2c3947;--acc:#5aa8ff;--accfg:#0b1118;--a:#b2caeb;--b:#ebd3b2;--ink:#ff6fa8;--shadow:0 2px 10px rgba(0,0,0,.4);--warn:#3a2f10;--warnfg:#f3d58a;--bad:#3d1a1a;--badfg:#ffb3b3}}
+:root[data-theme="dark"]{--page:#0b1016;--bg:#121a23;--fg:#e8eef4;--mut:#9fb0c0;--card:#18212b;--line:#2c3947;--acc:#5aa8ff;--accfg:#0b1118;--a:#b2caeb;--b:#ebd3b2;--ink:#ff6fa8;--shadow:0 2px 10px rgba(0,0,0,.4);--warn:#3a2f10;--warnfg:#f3d58a;--bad:#3d1a1a;--badfg:#ffb3b3}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--page);color:var(--fg);font-family:"Hiragino Sans","Yu Gothic",Meiryo,system-ui,sans-serif;line-height:1.6}
+main{max-width:920px;margin:0 auto;padding:16px 14px 36px}
+header{margin:6px 2px 14px}
+h1{font-size:1.45rem;margin:0}
+header p{margin:2px 0 0;color:var(--mut);font-size:.92rem}
+h2{font-size:1.05rem;margin:0 0 6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;margin-bottom:12px;box-shadow:var(--shadow)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lbl{font-size:.85rem;color:var(--mut);font-weight:600}
+button{font:inherit;font-size:.92rem;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;transition:background .15s,border-color .15s}
+button:hover{border-color:var(--acc)}
+button.on,button.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+.step{width:38px;padding:8px 0;font-weight:700}
+input[type=number]{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);text-align:center}
+input[type=number]:focus{outline:2px solid var(--acc);outline-offset:1px}
+#nIn{width:9em}
+#wrap{background:var(--bg);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
+canvas{display:block;width:100%;aspect-ratio:16/10}
+input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
+.info{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px 18px;font-size:.92rem}
+.info b{font-variant-numeric:tabular-nums}
+.note{font-size:.82rem;color:var(--mut);margin:6px 0 0}
+#warn{display:none;margin-top:10px;padding:9px 12px;border-radius:10px;font-size:.88rem;font-weight:600}
+#warn.mid{display:block;background:var(--warn);color:var(--warnfg)}
+#warn.bad{display:block;background:var(--bad);color:var(--badfg)}
+.calc{text-align:center}
+.calc input{width:min(260px,100%);font-size:1.15rem;margin:8px 0 4px}
+.res{margin-top:12px;padding:14px;border-radius:12px;background:var(--page);word-break:break-all;text-align:center}
+.rl{font-size:.8rem;color:var(--mut);font-weight:600}
+#formula{display:block;font-size:1.1rem;color:#1e9e4a;margin:2px 0 4px;font-weight:700}
+#chain{display:block;font-size:.85rem;color:var(--mut);margin-bottom:12px}
+#total{display:block;font-size:1.5rem;color:var(--acc);font-weight:800;line-height:1.35}
+#digits{display:block;font-size:.8rem;color:var(--mut);margin-top:4px}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>円の面積のひみつ</h1>
+  <p>円を細かく切って並べかえると、だんだん長方形に近づきます。</p>
+</header>
+
+<section class="card">
+  <div class="row">
+    <span class="lbl">分割数</span>
+    <button class="step" id="dec" aria-label="2へらす">−</button>
+    <input type="number" id="nIn" min="2" step="2" value="16" inputmode="numeric">
+    <button class="step" id="inc" aria-label="2ふやす">＋</button>
+    <span class="lbl" style="margin-left:8px">よく使う数</span>
+    <span class="row" id="presets"></span>
+  </div>
+  <p class="note" id="msg">2以上の偶数を入れてください。奇数は次の偶数にそろえます。</p>
+  <div id="warn"></div>
+</section>
+
+<div id="wrap"><canvas id="cv"></canvas></div>
+
+<section class="card" style="margin-top:12px">
+  <div class="row">
+    <button class="pri" id="go">▶ 並べかえる</button>
+    <button id="back">◀ もどす</button>
+    <button id="stop">⏸ 止める</button>
+    <input type="range" id="sl" min="0" max="1000" value="0" aria-label="進み具合">
+  </div>
+  <div class="row" style="margin-top:10px">
+    <span class="lbl">書きこみ</span>
+    <button id="pen">✏️ ペン</button>
+    <button id="era">🧽 けしごむ</button>
+    <button id="rst">🗑 全部消す</button>
+  </div>
+</section>
+
+<section class="card info">
+  <div>1つのおうぎ形の中心角：<b id="i1"></b></div>
+  <div>たて（半径）：<b>10 cm</b></div>
+  <div>よこ（近似）：<b id="i2"></b></div>
+  <div>たて×よこ（近似の面積）：<b id="i3"></b></div>
+  <div>円の面積 10×10×3.14…：<b>314.159… cm²</b></div>
+</section>
+
+<section class="card calc">
+  <h2>連続2倍計算機</h2>
+  <p class="note" style="margin-top:0">2倍する「回数」を入力してください（0〜1023）。</p>
+  <input type="number" id="loopInput" min="0" max="1023" step="1" placeholder="例：4 や 5" inputmode="numeric">
+  <div class="res">
+    <div class="rl">計算の道のり</div>
+    <span id="formula">–</span>
+    <span id="chain"></span>
+    <div class="rl">最終結果</div>
+    <span id="total">–</span>
+    <span id="digits"></span>
+  </div>
+</section>
+</main>
+
+<script>
+(function(){
+const $=id=>document.getElementById(id);
+const cv=$('cv'),ctx=cv.getContext('2d');
+const PI=Math.PI,R=10,DA=0.2;
+let n=16,t=0,goal=0,moving=false,mode='none',strokes=[],cur=null,last=0,SC=1,OX=0,OY=0;
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
+const ease=x=>x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
+const css=k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
+
+function setN(v){
+  v=Math.floor(Number(v));
+  if(!isFinite(v))v=n;
+  if(v<2)v=2;
+  const odd=v%2===1;
+  if(odd)v+=1;
+  n=v;
+  $('nIn').value=n;
+  $('msg').textContent=odd?'奇数は並べかえられないので、'+n+'にそろえました。':'2以上の偶数を入れてください。奇数は次の偶数にそろえます。';
+  document.querySelectorAll('#presets button').forEach(b=>b.classList.toggle('on',+b.dataset.n===n));
+  $('i1').textContent=+(360/n).toPrecision(4)+'°';
+  const w=n*R*Math.sin(PI/n);
+  $('i2').textContent=w.toFixed(3)+' cm（円周の半分は31.416 cm）';
+  $('i3').textContent=(R*w).toFixed(2)+' cm²';
+  const W=$('warn');
+  if(n>100000){W.className='bad';W.textContent='⚠️ 分割数がとても大きいため、ブラウザが固まったりタブが落ちたりする可能性が高いです。';}
+  else if(n>5000){W.className='bad';W.textContent='⚠️ 分割数が大きく、描画にかなり時間がかかります。動作がとても重くなります。';}
+  else if(n>720){W.className='mid';W.textContent='⚠️ 分割数が多いため、描画や動きが重くなることがあります。';}
+  else{W.className='';W.textContent='';}
+  requestAnimationFrame(()=>requestAnimationFrame(draw));
+}
+[8,16,32,64,128].forEach(v=>{
+  const b=document.createElement('button');b.textContent=v;b.dataset.n=v;
+  b.onclick=()=>setN(v);$('presets').appendChild(b);
+});
+$('nIn').addEventListener('change',e=>setN(e.target.value));
+$('nIn').addEventListener('keydown',e=>{if(e.key==='Enter'){setN(e.target.value);e.target.blur()}});
+$('dec').onclick=()=>setN(n-2);
+$('inc').onclick=()=>setN(n+2);
+
+function resize(){
+  const d=window.devicePixelRatio||1;
+  cv.width=Math.round(cv.clientWidth*d);cv.height=Math.round(cv.clientHeight*d);
+  draw();
+}
+
+function draw(){
+  const d=window.devicePixelRatio||1,W=cv.width/d,H=cv.height/d;
+  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);
+  SC=Math.min(W/3.9,H/2.9);OX=W/2;OY=H/2;
+  ctx.setTransform(d*SC,0,0,d*SC,d*OX,d*OY);
+  const th=2*PI/n,half=th/2,sn=Math.sin(half),cs=Math.cos(half),m=n/2,c=2*sn;
+  const tA=ease(clamp(t/0.25)),tB=ease(clamp((t-0.25)/0.4)),tC=ease(clamp((t-0.65)/0.35));
+  const pa=new Path2D(),pb=new Path2D(),pl=new Path2D();
+  // 各おうぎ形は外側（円周）の角でつながったまま、くさりのようにのびて直線になる
+  for(let up=1;up>=0;up--){
+    const from=up?0:m,to=up?m:n,rho=up?0:PI;
+    const by=up?-DA*tA+(0.5+DA)*tC:DA*tA+(0.5-cs-DA)*tC;
+    const bx=(up?-sn/2:sn/2)*tB;
+    const p=up?pa:pb;
+    let sx=0,sy=0,ax=0,ay=0,pcx=0,pcy=0;
+    for(let pass=0;pass<2;pass++){
+      const ox=pass?bx-sx/m:0,oy=pass?by-sy/m:0;
+      for(let k=from;k<to;k++){
+        const phi=-PI/2+(k+.5)*th,r=phi+(rho-phi)*tB;
+        if(k>from){ax=pcx-Math.sin(r-half);ay=pcy+Math.cos(r-half)}else{ax=0;ay=0}
+        pcx=ax+Math.sin(r+half);pcy=ay-Math.cos(r+half);
+        if(!pass){sx+=ax;sy+=ay;continue}
+        const X=ax+ox,Y=ay+oy,a1=r-half-PI/2,a2=r+half-PI/2;
+        p.moveTo(X,Y);p.arc(X,Y,1,a1,a2);p.closePath();
+        pl.moveTo(X,Y);pl.arc(X,Y,1,a1,a2);pl.closePath();
+      }
+    }
+  }
+  ctx.fillStyle=css('--a');ctx.fill(pa);
+  ctx.fillStyle=css('--b');ctx.fill(pb);
+  // 上から黒線を重ねる（細かすぎるときは薄くする）
+  ctx.globalAlpha=clamp((c*SC-1)/5,0.1,1);
+  ctx.strokeStyle='#828282';ctx.lineWidth=0.95/SC;ctx.lineJoin='round';
+  ctx.stroke(pl);
+  ctx.globalAlpha=1;
+
+  const fg=css('--fg'),mut=css('--mut');
+  ctx.font=(14/SC)+'px sans-serif';ctx.textBaseline='middle';
+  const a1=clamp((t-0.92)/0.08);
+  if(a1>0){
+    const hw=(n+1)/2*sn;
+    ctx.globalAlpha=a1;ctx.strokeStyle=mut;ctx.fillStyle=fg;ctx.lineWidth=2/SC;
+    const vx=-hw-0.12;
+    ctx.beginPath();ctx.moveTo(vx,-0.5);ctx.lineTo(vx,0.5);
+    ctx.moveTo(vx-0.04,-0.5);ctx.lineTo(vx+0.04,-0.5);ctx.moveTo(vx-0.04,0.5);ctx.lineTo(vx+0.04,0.5);ctx.stroke();
+    ctx.textAlign='left';ctx.fillText('たて＝半径',vx+0.07,-0.64);
+    const hy=0.88;
+    ctx.beginPath();ctx.moveTo(-hw,hy);ctx.lineTo(hw,hy);
+    ctx.moveTo(-hw,hy-0.04);ctx.lineTo(-hw,hy+0.04);ctx.moveTo(hw,hy-0.04);ctx.lineTo(hw,hy+0.04);ctx.stroke();
+    ctx.textAlign='center';ctx.fillText('よこ ≈ 円周の半分 ＝ 半径×3.14',0,hy+0.13);
+    ctx.globalAlpha=1;
+  }
+  ctx.strokeStyle=css('--ink');ctx.lineWidth=3/SC;ctx.lineCap='round';ctx.lineJoin='round';
+  for(const s of strokes){
+    ctx.beginPath();
+    s.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+    if(s.length===1)ctx.lineTo(s[0][0]+0.001,s[0][1]);
+    ctx.stroke();
+  }
+  $('sl').value=Math.round(t*1000);
+}
+
+function frame(ts){
+  if(moving){
+    const dt=last?Math.min(0.05,(ts-last)/1000):0;
+    const step=dt/4.5;
+    t=goal>t?Math.min(goal,t+step):Math.max(goal,t-step);
+    if(t===goal)moving=false;
+    draw();
+  }
+  last=ts;requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+$('go').onclick=()=>{goal=1;moving=true};
+$('back').onclick=()=>{goal=0;moving=true};
+$('stop').onclick=()=>{moving=false};
+$('sl').addEventListener('input',e=>{moving=false;t=e.target.value/1000;draw()});
+
+function setMode(m){
+  mode=(mode===m)?'none':m;
+  $('pen').classList.toggle('on',mode==='pen');
+  $('era').classList.toggle('on',mode==='era');
+  cv.style.touchAction=mode==='none'?'auto':'none';
+  cv.style.cursor=mode==='none'?'default':'crosshair';
+}
+$('pen').onclick=()=>setMode('pen');
+$('era').onclick=()=>setMode('era');
+$('rst').onclick=()=>{strokes=[];draw()};
+function pt(e){const r=cv.getBoundingClientRect();return [(e.clientX-r.left-OX)/SC,(e.clientY-r.top-OY)/SC]}
+function erase(p){const rad=14/SC;strokes=strokes.filter(s=>!s.some(q=>Math.hypot(q[0]-p[0],q[1]-p[1])<rad))}
+cv.addEventListener('pointerdown',e=>{
+  if(mode==='none')return;
+  cv.setPointerCapture(e.pointerId);
+  const p=pt(e);
+  if(mode==='pen'){cur=[p];strokes.push(cur)}else{cur=true;erase(p)}
+  draw();
+});
+cv.addEventListener('pointermove',e=>{
+  if(!cur)return;
+  const p=pt(e);
+  if(mode==='pen')cur.push(p);else erase(p);
+  draw();
+});
+['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,()=>{cur=null}));
+window.addEventListener('resize',resize);
+if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+
+// 連続2倍計算機
+function runLoop(){
+  const inp=$('loopInput'),f=$('formula'),tot=$('total'),ch=$('chain'),dg=$('digits');
+  const reset=()=>{f.textContent='–';tot.textContent='–';ch.textContent='';dg.textContent=''};
+  if(inp.value===''||parseInt(inp.value,10)<=0||isNaN(parseInt(inp.value,10))){reset();return}
+  let count=parseInt(inp.value,10);
+  if(count>1023){count=1023;inp.value=1023}
+  const total=(1n<<BigInt(count)).toString();
+  f.textContent='2^'+count+' = '+(total.length>40?total.slice(0,12)+'…':total);
+  if(count<=12){const a=['1'];for(let i=1;i<=count;i++)a.push(String(2**i));ch.textContent=a.join(' → ')}else ch.textContent='';
+  tot.textContent=total;
+  dg.textContent=total.length>=10?'（'+total.length+'桁）':'';
+}
+$('loopInput').addEventListener('input',runLoop);
+
+setN(16);resize();
+})();
+</script>
+</body>
+</html>

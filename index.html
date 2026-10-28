@@ -23,6 +23,7 @@ h2{font-size:1.05rem;margin:0 0 6px}
 button{font:inherit;font-size:.92rem;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer;transition:background .15s,border-color .15s}
 button:hover{border-color:var(--acc)}
 button.on,button.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
+button:disabled{opacity:.45;cursor:not-allowed}
 .step{width:38px;padding:8px 0;font-weight:700}
 input[type=number]{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);text-align:center}
 input[type=number]:focus{outline:2px solid var(--acc);outline-offset:1px}
@@ -63,6 +64,7 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
     <span class="row" id="presets"></span>
   </div>
   <p class="note" id="msg">2以上の偶数を入れてください。奇数は次の偶数にそろえます。</p>
+  <label class="row" style="margin-top:8px;font-size:.88rem;cursor:pointer"><input type="checkbox" id="unl"> 表示のリミッターを外す（4096分割より細かくても、そのまま描く）</label>
   <div id="warn"></div>
 </section>
 
@@ -103,6 +105,7 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
     <span id="total">–</span>
     <span id="digits"></span>
   </div>
+  <button class="pri" id="useN" disabled style="margin-top:12px">この結果を分割数に入れる</button>
 </section>
 </main>
 
@@ -111,11 +114,17 @@ input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
 const $=id=>document.getElementById(id);
 const cv=$('cv'),ctx=cv.getContext('2d');
 const PI=Math.PI,R=10,DA=0.2;
-let n=16,t=0,goal=0,moving=false,mode='none',strokes=[],cur=null,last=0,SC=1,OX=0,OY=0;
+let unl=false,n=16,t=0,goal=0,moving=false,mode='none',strokes=[],cur=null,last=0,SC=1,OX=0,OY=0;
 const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
 const ease=x=>x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
 const css=k=>getComputedStyle(document.documentElement).getPropertyValue(k).trim();
 
+function updWarn(){
+  const W=$('warn');
+  if(n>4096&&unl){W.className='bad';W.textContent='⚠️ リミッター解除中です。'+(n>1e12?n.toExponential(3):n.toLocaleString('ja-JP'))+'分割をそのまま描くため、ブラウザが固まったりタブが落ちたりする可能性があります。';}
+  else if(n>4096){W.className='mid';W.textContent='⚠️ 分割数が4096を超えているため、見た目は4096分割で描いています（下の数値は入力した分割数で計算しています）。';}
+  else{W.className='';W.textContent='';}
+}
 function setN(v){
   v=Math.floor(Number(v));
   if(!isFinite(v))v=n;
@@ -130,11 +139,7 @@ function setN(v){
   const w=n*R*Math.sin(PI/n);
   $('i2').textContent=w.toFixed(3)+' cm（円周の半分は31.416 cm）';
   $('i3').textContent=(R*w).toFixed(2)+' cm²';
-  const W=$('warn');
-  if(n>100000){W.className='bad';W.textContent='⚠️ 分割数がとても大きいため、ブラウザが固まったりタブが落ちたりする可能性が高いです。';}
-  else if(n>5000){W.className='bad';W.textContent='⚠️ 分割数が大きく、描画にかなり時間がかかります。動作がとても重くなります。';}
-  else if(n>720){W.className='mid';W.textContent='⚠️ 分割数が多いため、描画や動きが重くなることがあります。';}
-  else{W.className='';W.textContent='';}
+  updWarn();
   requestAnimationFrame(()=>requestAnimationFrame(draw));
 }
 [8,16,32,64,128].forEach(v=>{
@@ -152,66 +157,86 @@ function resize(){
   draw();
 }
 
-function draw(){
-  const d=window.devicePixelRatio||1,W=cv.width/d,H=cv.height/d;
-  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);
-  SC=Math.min(W/3.9,H/2.9);OX=W/2;OY=H/2;
-  ctx.setTransform(d*SC,0,0,d*SC,d*OX,d*OY);
-  const th=2*PI/n,half=th/2,sn=Math.sin(half),cs=Math.cos(half),m=n/2,c=2*sn;
+const oc=document.createElement('canvas'),octx=oc.getContext('2d');
+let key='',col={};
+function loadColors(){col={a:css('--a'),b:css('--b'),fg:css('--fg'),mut:css('--mut'),ink:css('--ink')};key='';}
+
+// 図形の部分だけをオフスクリーンに描く（書きこみ中はこれを貼るだけ）
+function scene(d){
+  const g=octx;
+  g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,oc.width,oc.height);
+  g.setTransform(d*SC,0,0,d*SC,d*OX,d*OY);
+  // 見た目の上限は4096分割（リミッターを外すと入力した数をそのまま描く）
+  const nr=(!unl&&n>4096)?4096:n;
+  const th=2*PI/nr,half=th/2,sn=Math.sin(half),cs=Math.cos(half),m=nr/2,c=2*sn;
   const tA=ease(clamp(t/0.25)),tB=ease(clamp((t-0.25)/0.4)),tC=ease(clamp((t-0.65)/0.35));
-  const pa=new Path2D(),pb=new Path2D(),pl=new Path2D();
-  // 各おうぎ形は外側（円周）の角でつながったまま、くさりのようにのびて直線になる
+  const flat=(1-cs)*SC<0.25;   // 円弧のふくらみが0.25px未満なら直線で描く
+  const lines=c*SC>=1;         // 線が1px間隔より細かいときは描かない
+  const d1=(1-tB)*th,sd=Math.sin(d1),cd=Math.cos(d1);
+  const parts=[];
   for(let up=1;up>=0;up--){
-    const from=up?0:m,to=up?m:n,rho=up?0:PI;
+    const from=up?0:m,rho=up?0:PI;
     const by=up?-DA*tA+(0.5+DA)*tC:DA*tA+(0.5-cs-DA)*tC;
     const bx=(up?-sn/2:sn/2)*tB;
-    const p=up?pa:pb;
-    let sx=0,sy=0,ax=0,ay=0,pcx=0,pcy=0;
-    for(let pass=0;pass<2;pass++){
-      const ox=pass?bx-sx/m:0,oy=pass?by-sy/m:0;
-      for(let k=from;k<to;k++){
-        const phi=-PI/2+(k+.5)*th,r=phi+(rho-phi)*tB;
-        if(k>from){ax=pcx-Math.sin(r-half);ay=pcy+Math.cos(r-half)}else{ax=0;ay=0}
-        pcx=ax+Math.sin(r+half);pcy=ay-Math.cos(r+half);
-        if(!pass){sx+=ax;sy+=ay;continue}
-        const X=ax+ox,Y=ay+oy,a1=r-half-PI/2,a2=r+half-PI/2;
-        p.moveTo(X,Y);p.arc(X,Y,1,a1,a2);p.closePath();
-        pl.moveTo(X,Y);pl.arc(X,Y,1,a1,a2);pl.closePath();
-      }
+    const p=new Path2D();
+    const r0=(-PI/2+(from+.5)*th)*(1-tB)+rho*tB;
+    let sx=0,sy=0,ax=0,ay=0,pcx=0,pcy=0,sr=0,cr=1;
+    for(let j=0;j<m;j++){
+      const r=r0+j*d1;
+      if((j&255)===0){sr=Math.sin(r);cr=Math.cos(r);}   // 角度は漸化式で進め、256個ごとに正確な値へ戻す
+      const sL=sr*cs-cr*sn,cL=cr*cs+sr*sn,sR=sr*cs+cr*sn,cR=cr*cs-sr*sn;
+      if(j){ax=pcx-sL;ay=pcy+cL}else{ax=0;ay=0}
+      pcx=ax+sR;pcy=ay-cR;
+      sx+=ax;sy+=ay;
+      p.moveTo(ax,ay);
+      if(flat){p.lineTo(ax+sL,ay-cL);p.lineTo(pcx,pcy)}else p.arc(ax,ay,1,r-half-PI/2,r+half-PI/2);
+      p.closePath();
+      const nsr=sr*cd+cr*sd;cr=cr*cd-sr*sd;sr=nsr;
     }
+    parts.push({p,x:bx-sx/m,y:by-sy/m,up});
   }
-  ctx.fillStyle=css('--a');ctx.fill(pa);
-  ctx.fillStyle=css('--b');ctx.fill(pb);
-  // 上から黒線を重ねる（細かすぎるときは薄くする）
-  ctx.globalAlpha=clamp((c*SC-1)/5,0.1,1);
-  ctx.strokeStyle='#828282';ctx.lineWidth=0.95/SC;ctx.lineJoin='round';
-  ctx.stroke(pl);
-  ctx.globalAlpha=1;
-
-  const fg=css('--fg'),mut=css('--mut');
-  ctx.font=(14/SC)+'px sans-serif';ctx.textBaseline='middle';
+  for(const q of parts){g.save();g.translate(q.x,q.y);g.fillStyle=q.up?col.a:col.b;g.fill(q.p);g.restore();}
+  if(lines){
+    g.strokeStyle='#828282';g.lineWidth=0.95/SC;g.lineJoin='round';g.globalAlpha=clamp((c*SC-1)/5,0.1,1);
+    for(const q of parts){g.save();g.translate(q.x,q.y);g.stroke(q.p);g.restore();}
+    g.globalAlpha=1;
+  }
+  g.font=(14/SC)+'px sans-serif';g.textBaseline='middle';
   const a1=clamp((t-0.92)/0.08);
   if(a1>0){
-    const hw=(n+1)/2*sn;
-    ctx.globalAlpha=a1;ctx.strokeStyle=mut;ctx.fillStyle=fg;ctx.lineWidth=2/SC;
+    const hw=(nr+1)/2*sn;
+    g.globalAlpha=a1;g.strokeStyle=col.mut;g.fillStyle=col.fg;g.lineWidth=2/SC;
     const vx=-hw-0.12;
-    ctx.beginPath();ctx.moveTo(vx,-0.5);ctx.lineTo(vx,0.5);
-    ctx.moveTo(vx-0.04,-0.5);ctx.lineTo(vx+0.04,-0.5);ctx.moveTo(vx-0.04,0.5);ctx.lineTo(vx+0.04,0.5);ctx.stroke();
-    ctx.textAlign='left';ctx.fillText('たて＝半径',vx+0.07,-0.64);
+    g.beginPath();g.moveTo(vx,-0.5);g.lineTo(vx,0.5);
+    g.moveTo(vx-0.04,-0.5);g.lineTo(vx+0.04,-0.5);g.moveTo(vx-0.04,0.5);g.lineTo(vx+0.04,0.5);g.stroke();
+    g.textAlign='left';g.fillText('たて＝半径',vx+0.07,-0.64);
     const hy=0.88;
-    ctx.beginPath();ctx.moveTo(-hw,hy);ctx.lineTo(hw,hy);
-    ctx.moveTo(-hw,hy-0.04);ctx.lineTo(-hw,hy+0.04);ctx.moveTo(hw,hy-0.04);ctx.lineTo(hw,hy+0.04);ctx.stroke();
-    ctx.textAlign='center';ctx.fillText('よこ ≈ 円周の半分 ＝ 半径×3.14',0,hy+0.13);
-    ctx.globalAlpha=1;
+    g.beginPath();g.moveTo(-hw,hy);g.lineTo(hw,hy);
+    g.moveTo(-hw,hy-0.04);g.lineTo(-hw,hy+0.04);g.moveTo(hw,hy-0.04);g.lineTo(hw,hy+0.04);g.stroke();
+    g.textAlign='center';g.fillText('よこ ≈ 円周の半分 ＝ 半径×3.14',0,hy+0.13);
+    g.globalAlpha=1;
   }
-  ctx.strokeStyle=css('--ink');ctx.lineWidth=3/SC;ctx.lineCap='round';ctx.lineJoin='round';
-  for(const s of strokes){
-    ctx.beginPath();
-    s.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
-    if(s.length===1)ctx.lineTo(s[0][0]+0.001,s[0][1]);
-    ctx.stroke();
+}
+
+function draw(){
+  const d=window.devicePixelRatio||1,W=cv.width/d,H=cv.height/d;
+  SC=Math.min(W/3.9,H/2.9);OX=W/2;OY=H/2;
+  if(oc.width!==cv.width||oc.height!==cv.height){oc.width=cv.width;oc.height=cv.height;key='';}
+  const k=n+'|'+t;
+  if(k!==key){key=k;scene(d);}      // n と t が同じなら図形は描き直さない
+  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);ctx.drawImage(oc,0,0);
+  if(strokes.length){
+    ctx.setTransform(d*SC,0,0,d*SC,d*OX,d*OY);
+    ctx.strokeStyle=col.ink;ctx.lineWidth=3/SC;ctx.lineCap='round';ctx.lineJoin='round';
+    for(const s of strokes){
+      ctx.beginPath();
+      s.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));
+      if(s.length===1)ctx.lineTo(s[0][0]+0.001,s[0][1]);
+      ctx.stroke();
+    }
   }
-  $('sl').value=Math.round(t*1000);
+  const sv=Math.round(t*1000);
+  if(+$('sl').value!==sv)$('sl').value=sv;
 }
 
 function frame(ts){
@@ -242,7 +267,7 @@ $('pen').onclick=()=>setMode('pen');
 $('era').onclick=()=>setMode('era');
 $('rst').onclick=()=>{strokes=[];draw()};
 function pt(e){const r=cv.getBoundingClientRect();return [(e.clientX-r.left-OX)/SC,(e.clientY-r.top-OY)/SC]}
-function erase(p){const rad=14/SC;strokes=strokes.filter(s=>!s.some(q=>Math.hypot(q[0]-p[0],q[1]-p[1])<rad))}
+function erase(p){const r2=(14/SC)*(14/SC);strokes=strokes.filter(s=>!s.some(q=>{const dx=q[0]-p[0],dy=q[1]-p[1];return dx*dx+dy*dy<r2}))}
 cv.addEventListener('pointerdown',e=>{
   if(mode==='none')return;
   cv.setPointerCapture(e.pointerId);
@@ -257,25 +282,28 @@ cv.addEventListener('pointermove',e=>{
   draw();
 });
 ['pointerup','pointercancel'].forEach(ev=>cv.addEventListener(ev,()=>{cur=null}));
-window.addEventListener('resize',resize);
-if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+let rz=0;window.addEventListener('resize',()=>{cancelAnimationFrame(rz);rz=requestAnimationFrame(resize)});
+if(window.matchMedia)matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{loadColors();draw()});
 
 // 連続2倍計算機
+let calcVal=null;
 function runLoop(){
   const inp=$('loopInput'),f=$('formula'),tot=$('total'),ch=$('chain'),dg=$('digits');
-  const reset=()=>{f.textContent='–';tot.textContent='–';ch.textContent='';dg.textContent=''};
+  const reset=()=>{f.textContent='–';tot.textContent='–';ch.textContent='';dg.textContent='';calcVal=null;$('useN').disabled=true};
   if(inp.value===''||parseInt(inp.value,10)<=0||isNaN(parseInt(inp.value,10))){reset();return}
   let count=parseInt(inp.value,10);
   if(count>1023){count=1023;inp.value=1023}
   const total=(1n<<BigInt(count)).toString();
   f.textContent='2^'+count+' = '+(total.length>40?total.slice(0,12)+'…':total);
   if(count<=12){const a=['1'];for(let i=1;i<=count;i++)a.push(String(2**i));ch.textContent=a.join(' → ')}else ch.textContent='';
-  tot.textContent=total;
+  tot.textContent=total;calcVal=total;$('useN').disabled=false;
   dg.textContent=total.length>=10?'（'+total.length+'桁）':'';
 }
 $('loopInput').addEventListener('input',runLoop);
+$('useN').onclick=()=>{if(calcVal==null)return;setN(Number(calcVal));$('nIn').scrollIntoView({behavior:'smooth',block:'center'})};
+$('unl').addEventListener('change',e=>{unl=e.target.checked;key='';updWarn();requestAnimationFrame(()=>requestAnimationFrame(draw))});
 
-setN(16);resize();
+loadColors();setN(16);resize();
 })();
 </script>
 </body>

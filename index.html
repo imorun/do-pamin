@@ -24,7 +24,7 @@ button{font:inherit;font-size:.92rem;padding:8px 14px;border-radius:10px;border:
 button:hover{border-color:var(--acc)}
 button.on,button.pri{background:var(--acc);color:var(--accfg);border-color:var(--acc)}
 button:disabled{opacity:.45;cursor:not-allowed}
-.step{width:38px;padding:8px 0;font-weight:700}
+.step{width:38px;padding:8px 0;font-weight:700;touch-action:manipulation;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 input[type=number]{font:inherit;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);text-align:center}
 input[type=number]:focus{outline:2px solid var(--acc);outline-offset:1px}
 #nIn{width:9em}
@@ -148,8 +148,23 @@ function setN(v){
 });
 $('nIn').addEventListener('change',e=>setN(e.target.value));
 $('nIn').addEventListener('keydown',e=>{if(e.key==='Enter'){setN(e.target.value);e.target.blur()}});
-$('dec').onclick=()=>setN(n-2);
-$('inc').onclick=()=>setN(n+2);
+// ボタンを押したらすを1回動かし、長押しすると連続で動かす
+function holdRepeat(btn,delta){
+  let to=0,iv=0;
+  const stop=()=>{clearTimeout(to);clearInterval(iv)};
+  const step=()=>setN(n+delta);
+  btn.addEventListener('pointerdown',e=>{
+    if(e.button>0)return;
+    stop();step();
+    to=setTimeout(()=>{iv=setInterval(step,70)},400);
+  });
+  ['pointerup','pointerleave','pointercancel'].forEach(ev=>btn.addEventListener(ev,stop));
+  btn.addEventListener('contextmenu',e=>e.preventDefault());
+  btn.addEventListener('click',e=>{if(e.detail===0)step()});  // キーボード操作用
+  window.addEventListener('blur',stop);
+}
+holdRepeat($('dec'),-2);
+holdRepeat($('inc'),2);
 
 function resize(){
   const d=window.devicePixelRatio||1;
